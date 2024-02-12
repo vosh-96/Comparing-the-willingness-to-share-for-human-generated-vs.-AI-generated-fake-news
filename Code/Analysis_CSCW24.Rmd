@@ -1,0 +1,1161 @@
+---
+title: "AI-Generated Fake News: User Study"
+output: 
+    {
+    fig_caption: yes,
+    extra_dependencies: ["dcolumn","rotating","graphicx"]
+    }
+    
+date: "2023-06-23"
+---
+
+```{r setup, include=FALSE,echo=FALSE,massAge = FALSE}
+knitr::opts_chunk$set(echo = FALSE, results = "asis")
+```
+
+```{r,echo=FALSE,include=FALSE}
+library(readr)
+library(tidyverse)
+library(reshape2)
+library(nortest)
+library(sandwich)
+library(lmtest)
+library(zoo)
+library(MASS)
+library(lme4)
+library(lmerTest)
+library(estimatr)
+library(stargazer)
+library(sjPlot)
+library(sjstats)
+library(infotheo)
+library(Hmisc)
+library(parameters)
+library(car)
+library(AICcmodavg)
+library(ROCR)
+library(epitab)
+library(xtable)
+library(kableExtra)
+library(bookdown)
+library(ggstatsplot)
+library(ordinal)
+library(ggpubr)
+library(coefplot)
+library(dotwhisker)
+library(ggstats)
+library(performance)
+library(lavaan)
+library(emmeans)
+library(gridExtra)
+library(grid)
+library(boot)
+library(rstatix)
+library(psych)
+library(DescTools)
+library(rcompanion)
+library(Matrix)
+library(ggsignif)
+```
+
+```{r}
+# Function def
+# requires ggstatsplot
+SignifStar <- function(data) {
+  data_stat <- extract_stats(data)
+  if (data_stat$subtitle_data$p.value < 0.001) {
+    annotation <- "***"
+  } else if (data_stat$subtitle_data$p.value < 0.01 & data_stat$subtitle_data$p.value > 0.0001) {
+    annotation <- "**"
+  } else if (data_stat$subtitle_data$p.value < 0.05 & data_stat$subtitle_data$p.value > 0.001) {
+    annotation <- "**"
+  } else if (data_stat$subtitle_data$p.value < 0.1 & data_stat$subtitle_data$p.value > 0.05) {
+    annotation <- "."
+  }
+}
+```
+
+
+
+
+```{r load,echo=FALSE,include=FALSE}
+# read the processed_data
+processed_data <- read_csv(file.path("Data", "processed_data.csv"))
+```
+
+
+
+```{r, echo = FALSE}
+# Data processing
+processed_data <- rename(processed_data, user_id = ResponseId)
+processed_data <- rename(processed_data, fall_for_fake_news_status = fall_for_fake_news)
+processed_data <- processed_data %>%
+  dplyr::filter(WillingnessToShare != -1) %>%
+  dplyr::select(user_id, Statement, WillingnessToShare) %>%
+  mutate(WillingnessToShare_z = ((WillingnessToShare - mean(WillingnessToShare)) / sd(WillingnessToShare))) %>%
+  full_join(processed_data %>% dplyr::select(-WillingnessToShare), by = c("user_id", "Statement")) %>%
+  mutate(WillingnessToShare = replace_na(WillingnessToShare, -1))
+
+processed_data <- processed_data %>%
+  mutate(fake_news_generation_source_z = ((fake_news_generation_source - mean(fake_news_generation_source)) / sd(fake_news_generation_source))) %>%
+  mutate(PerceivedVeracity_z = ((PerceivedVeracity - mean(PerceivedVeracity)) / sd(PerceivedVeracity))) %>%
+  mutate(vaccination_z = ((VaccinationStatus - mean(VaccinationStatus)) / sd(VaccinationStatus))) %>%
+  mutate(SocialOrientation_z = ((SocialOrientation - mean(SocialOrientation)) / sd(SocialOrientation))) %>%
+  mutate(EconomicOrientation_z = ((EconomicOrientation - mean(EconomicOrientation)) / sd(EconomicOrientation))) %>%
+  mutate(PoliticalOrientation_z = ((PoliticalOrientation - mean(PoliticalOrientation)) / sd(PoliticalOrientation))) %>%
+  mutate(Ethnicity_z = ((Ethnicity - mean(Ethnicity)) / sd(Ethnicity))) %>%
+  mutate(EthnicityBinary_z = ((EthnicityBinary - mean(EthnicityBinary)) / sd(EthnicityBinary))) %>%
+  mutate(Fuency_z = ((Fluency - mean(Fluency)) / sd(Ethnicity))) %>%
+  mutate(education_z = ((EducationYears - mean(EducationYears)) / sd(Fluency))) %>%
+  mutate(religious_z = ((Religiosity - mean(Religiosity)) / sd(Religiosity))) %>%
+  mutate(Income_z = ((Income - mean(Income)) / sd(Income))) %>%
+  mutate(NewsConsumption_z = ((NewsConsumption - mean(NewsConsumption)) / sd(NewsConsumption))) %>%
+  mutate(Concern_z = ((Concern - mean(Concern)) / sd(Concern))) %>%
+  mutate(CRT_score_z = ((CRT - mean(CRT)) / sd(CRT))) %>%
+  mutate(Time_to_respond_z = ((Time_to_respond - mean(Time_to_respond)) / sd(Time_to_respond))) %>%
+  mutate(Age_z = ((Age - mean(Age)) / sd(Age))) %>%
+  mutate(StatementSequence_z = ((StatementSequence - mean(StatementSequence)) / sd(StatementSequence))) %>%
+  mutate(fake_news_generation_source_fac = as.factor(fake_news_generation_source)) %>%
+  mutate(SocialOrientation = as.factor(SocialOrientation)) %>%
+  mutate(EconomicOrientation = as.factor(EconomicOrientation)) %>%
+  mutate(PoliticalOrientation = as.factor(PoliticalOrientation)) %>%
+  mutate(Income = as.factor(Income)) %>%
+  mutate(Fluency = as.factor(Fluency)) %>%
+  mutate(Religiosity = as.factor(Religiosity)) %>%
+  mutate(Ethnicity = as.factor(Ethnicity)) %>%
+  mutate(Statement = as.factor(Statement)) %>%
+  mutate(VaccinationStatus = as.factor(VaccinationStatus)) %>%
+  mutate(fall_for_fake_news_status = as.factor(fall_for_fake_news_status)) %>%
+  mutate(EthnicityBinary = as.factor(EthnicityBinary)) %>%
+  mutate(statement_source = as.factor(statement_source)) %>%
+  mutate(NewsConsumption = as.factor(NewsConsumption)) %>%
+  mutate(GenderBinary = as.factor(GenderBinary)) %>%
+  #  mutate(Veracity = as.factor(Veracity)) %>%
+  mutate(WillingnessToShare_fac = as.factor(WillingnessToShare))
+
+processed_data <- processed_data %>%
+  group_by(user_id) %>%
+  mutate(
+    fail_for_fake_news_rate =
+      sum(fall_for_fake_news_status == 1, na.rm = T) / n()
+  )
+
+processed_data <- processed_data %>%
+  group_by(user_id, fake_news_generation_source) %>%
+  mutate(
+    fall_for_fake_news_rate_per_fake_news_generation_source =
+      sum(fall_for_fake_news_status == 1, na.rm = T) / n()
+  )
+
+
+
+processed_data <- processed_data %>% dplyr::ungroup()
+```
+
+
+
+
+```{r, echo = FALSE}
+# Create a contingency table
+
+
+table_share <- table(
+  processed_data %>%
+    .$fake_news_generation_source,
+  processed_data %>%
+    .$WillingnessToShare
+)
+# contingency_table_share
+rownames(table_share) <- c("Human-generated", "AI-generated")
+colnames(table_share) <- c("Don't know", "Not share", "Share")
+table_share
+```
+```{r, echo = FALSE}
+processed_data %>%
+  group_by(fake_news_generation_source) %>%
+  summarise(mean_veracity = mean(PerceivedVeracity))
+```
+
+
+```{r img1, out.width="70%",fig.cap="\\label{fig:Veracity}Veracity distribution of fake news from 1 (strongly disagree) to 5 (strongly agree) ", fig.align='center'}
+# Sample plot
+# pdf("Veracity_disturb.pdf", width=8, height=4)
+#
+
+ggplot(
+  data = processed_data %>% group_by(PerceivedVeracity, fake_news_generation_source_fac) %>%
+    summarise(percentage = n() / length(processed_data$PerceivedVeracity)) %>%
+    mutate(PerceivedVeracity = as.factor(PerceivedVeracity)),
+  aes(x = PerceivedVeracity, y = percentage, fill = fake_news_generation_source_fac)
+) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  scale_fill_manual(
+    values = c("#000666", "#990000"), name = "",
+    labels = c("Human-generated", "AI-generated")
+  ) +
+  scale_x_discrete(
+    labels = c(
+      "0" = "'Very inaccurate'",
+      "1" = "'Somehow inaccurate'",
+      "2" = "'Neutral'", "3" = "'Somehow accurate'",
+      "4" = "'Very accurate'"
+    )
+  ) +
+  ylab("Relative Frequency (in %)") +
+  xlab("PerceivedVeracity") +
+  theme_blank() +
+  theme(
+    legend.position = c(0.8, 0.9), legend.text = element_text(size = 11),
+    axis.text = element_text(size = 12),
+    axis.text.x = element_text(angle = 90),
+    axis.title = element_text(size = 12, face = "plain")
+  )
+
+
+# dev.off()
+```
+
+
+```{r}
+table_share_dataframe <- table_share %>%
+  as.data.frame() %>%
+  transform(Var2 = factor(Var2,
+    levels = c("Not share", "Share", "Don't know")
+  )) %>%
+  mutate(Color = c("#000666", "#990000", "#000666", "#990000", "#000666", "#990000")) %>%
+  mutate(percentage = round(Freq * 100 / (sum(Freq) / 2), 2))
+
+# pdf("Sharing_chi.pdf", width=6, height=4)
+pal_fill <- dplyr::distinct(table_share_dataframe, Var1, Color) |>
+  tibble::deframe()
+
+ggplot(table_share_dataframe, aes(Var1, percentage)) +
+  geom_col(aes(fill = Var1, alpha = Var2),
+    position = position_stack(reverse = TRUE)
+  ) +
+  geom_text(aes(label = paste0("N = ", Freq, " (", percentage, "%)"), group = Var2),
+    color = "white",
+    position = position_stack(vjust = 0.7, reverse = TRUE), show.legend = FALSE
+  ) +
+  scale_fill_manual(values = pal_fill) +
+  scale_alpha_manual(values = c(1, 0.6, 0.4)) +
+  guides(fill = "none", alpha = guide_legend(reverse = TRUE, title = "Level of clarity")) +
+  theme_blank() +
+  # theme(legend.title =  "clarity") +
+  ylab("") +
+  xlab("")
+# dev.off()
+```
+
+
+
+```{r img2, out.width="70%",fig.cap="\\label{fig:CRT}Cognative Reflection Test scores distribution",fig.align='center'}
+ggplot(
+  data = processed_data %>% dplyr::select(user_id, CRT) %>% unique(),
+  aes(x = as.factor(CRT))
+) +
+  geom_bar(alpha = 0.8, fill = "gray5") +
+  labs(x = "CRT score", y = "Frequency") +
+  theme_blank() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+
+
+```{r}
+gghistogram(processed_data %>% dplyr::select(user_id, Age, Gender) %>% unique(),
+  x = "Age",
+  add = "mean", rug = TRUE, fill = "Gender",
+  xlab = "Age (years)", ylab = "Frequency",
+  palette = "lancet"
+)
+```
+
+
+
+
+
+
+
+```{r img3,fig.cap="\\label{fig:Gender}Participants' Gender distribution",out.width="70%",fig.align='center'}
+ggplot(
+  data = processed_data %>% dplyr::select(user_id, Gender) %>% unique(),
+  aes(x = Gender)
+) +
+  geom_bar(alpha = 0.8, fill = "gray5") +
+  theme_minimal() +
+  labs(x = "Gender", y = "Frequency") +
+  ggtitle("Gender distribution") +
+  theme_blank() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+
+
+
+```{r img4,fig.cap="\\label{fig:SocialOrientationDisp}Participants' SocialOrientation orientation (with 1 very liberal) to 5 (very conservative)",out.width="70%",fig.align='center'}
+ggplot(
+  data = processed_data %>% dplyr::select(user_id, SocialOrientation) %>% unique(),
+  aes(x = SocialOrientation)
+) +
+  geom_bar(alpha = 0.8, fill = "gray5", width = 0.6) +
+  scale_x_discrete(labels = c(
+    "0" = "Strongly liberal", "1" = "Somewhat liberal", "2" = "Moderate",
+    "3" = "Somewhat conservative", "4" = "Strongly conservative"
+  )) +
+  labs(x = "SocialOrientation orientation", y = "Frequency") +
+  ggtitle("SocialOrientation orientation ") +
+  theme_blank() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+
+```{r img5,fig.cap="\\label{fig:EcDisp}Participants' EconomicOrientation orientation (with 1 very liberal) to 5 (very conservative)",out.width="70%",fig.align='center'}
+ggplot(
+  data = processed_data %>% dplyr::select(user_id, EconomicOrientation) %>% unique(),
+  aes(x = EconomicOrientation)
+) +
+  geom_bar(alpha = 0.8, fill = "gray5", width = 0.6) +
+  scale_x_discrete(labels = c(
+    "0" = "Strongly liberal", "1" = "Somewhat liberal", "2" = "Moderate",
+    "3" = "Somewhat conservative", "4" = "Strongly conservative"
+  )) +
+  labs(x = "EconomicOrientation orientation", y = "Frequency") +
+  theme_blank() +
+  theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+ggplot(
+  data = processed_data %>% dplyr::select(user_id, PoliticalOrientation) %>% unique(),
+  aes(x = PoliticalOrientation)
+) +
+  geom_bar(alpha = 0.8, fill = "gray5", width = 0.6) +
+  scale_x_discrete(labels = c(
+    "0" = "Left", "1" = "Moderate", "2" = "Right",
+    "3" = "Other"
+  )) +
+  labs(x = "EconomicOrientation orientation", y = "Frequency") +
+  theme_blank() +
+  theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r, echo=FALSE}
+processed_data %>%
+  group_by(PoliticalOrientation) %>%
+  unique() %>%
+  summarise(percentage = n() * 100 / length(.$PoliticalOrientation))
+```
+
+
+
+
+
+```{r img7,fig.cap="\\label{fig:VaccDisp}Participants' Covid vaccination status",out.width="70%",fig.align='center'}
+ggplot(
+  data = processed_data %>% dplyr::select(user_id, VaccinationStatus) %>% unique(),
+  aes(x = VaccinationStatus)
+) +
+  geom_bar(alpha = 0.8, fill = "gray5", width = 0.4) +
+  scale_x_discrete(labels = c("0" = "Not vaccinated", "1" = "Vaccinated")) +
+  labs(x = "vaccination status", y = "Frequency") +
+  theme_blank() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r img8,fig.cap="\\label{fig:Check}Frequency distribution of checking Covid news from 1 (never) to 5 (very often)",out.width="70%",fig.align='center'}
+ggplot(
+  data = processed_data %>%
+    mutate(NewsConsumption = as.factor(NewsConsumption)) %>%
+    dplyr::select(user_id, NewsConsumption) %>% unique(),
+  aes(x = NewsConsumption)
+) +
+  geom_bar(alpha = 0.8, fill = "gray5") +
+  scale_x_discrete(labels = c(
+    "0" = "Never", "1" = "Rarely", "2" = "Sometimes",
+    "3" = "Often", "4" = "Very often"
+  )) +
+  labs(x = "Level of checking Covid news proactively", y = "Frequency") +
+  theme_blank() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# RQ 1
+
+
+
+```{r,echo=FALSE}
+# Test whether the veracity of human-generated fake news is normal distribution
+
+accuracyNormalityTestHuman <- lillie.test(
+  processed_data %>% dplyr::filter(fake_news_generation_source == 0) %>%
+    .$PerceivedVeracity
+)
+
+# print the result
+print(accuracyNormalityTestHuman)
+```
+
+
+```{r, echo = FALSE}
+# Test whether the veracity of AI-generated fake news is normal distribution
+
+accuracy_normality_test_AI <- lillie.test(
+  filter(processed_data, fake_news_generation_source == 1) %>%
+    .$PerceivedVeracity
+)
+
+# print the result
+print(accuracy_normality_test_AI)
+```
+
+As the groups are not normal and the values are ordinal, we use *Mann Whitney U Test*. As the *p-value* is less than 0.05, we can conclude that these two groups are not from the same distribution.
+
+```{r, echo=FALSE}
+# final result of Wilcox test
+
+hypothesis_accuracy <- wilcox.test(
+  filter(processed_data, fake_news_generation_source == 0) %>%
+    .$PerceivedVeracity,
+  filter(processed_data, fake_news_generation_source == 1) %>%
+    .$PerceivedVeracity,
+  conf.int = TRUE
+)
+
+hypothesis_accuracy
+```
+
+
+# RQ 2
+
+Before testing *Hypothesis B*, pre-processing on the data is essential. As in the survey regarding willingness to share has three options (*Yes*,*Don't know*,*No*), first, w,e should drop all the responses with *'Don't know'*. Dropping the *Don't know* option makes our variable binary. Eliminating the *Don't know* option resulted in an 18.75 reduction in data. We use the *Ch-square test* to check if the proportion of binary variables are the same in both groups. 
+
+
+The contingency table of our data is as follow.
+
+```{r, echo = FALSE}
+# Create a contingency table
+
+
+contingency_table_share <- table(
+  processed_data %>% dplyr::filter(WillingnessToShare != -1) %>%
+    .$fake_news_generation_source,
+  processed_data %>% dplyr::filter(WillingnessToShare != -1) %>%
+    .$WillingnessToShare
+)
+# contingency_table_share
+rownames(contingency_table_share) <- c("Human-generated", "AI-generated")
+colnames(contingency_table_share) <- c("Not share", "Share")
+contingency_table_share
+```
+
+
+```{r}
+# Perform the chi-square test
+result_Chi_share <- chisq.test(contingency_table_share)
+
+# Print the result
+print(result_Chi_share)
+```
+
+
+
+
+```{r}
+pdf("Average_faliure_rate.pdf", width = 7, height = 5)
+average_faliure_rate <- ggwithinstats(
+  data = processed_data %>%
+    group_by(user_id, fake_news_generation_source) %>%
+    dplyr::summarize(mean_failure_rate = mean(fall_for_fake_news_rate_per_fake_news_generation_source) * 100, .groups = "drop"),
+  pairwise.comparisons = TRUE,
+  x = fake_news_generation_source,
+  y = mean_failure_rate,
+  xlab = "",
+  ylab = "Subjects' average failure rate in evaluating fake news veracity (in %)",
+  k = 3L,
+  type = "p",
+  conf.level = 0.95,
+  results.subtitle = TRUE,
+  point.args = list(alpha = 0),
+  centrality.point.args = list(color = c("#000666", "#990000")),
+  centrality.label.args = list(
+    size = 3.5, nudge_x = 0.4, segment.linetype = 4,
+    min.segment.length = 0
+  ),
+  centrality.path = FALSE,
+  point.path = FALSE,
+  ggplot.component = list(aes(fill = fake_news_generation_source))
+)
+
+average_faliure_rate +
+  scale_fill_manual(values = c("#000666", "#990000")) +
+  scale_x_discrete(labels = c("Human-generated fake news", "AI-generated fake news")) +
+  theme(
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 10, face = "plain")
+  ) +
+  geom_signif(
+    y_position = c(105), xmin = c(1), xmax = c(2),
+    annotation = SignifStar(average_faliure_rate), tip_length = 0
+  )
+
+dev.off()
+```
+
+
+
+
+
+```{r}
+pdf("Time_disturb.pdf", width = 7, height = 5)
+
+time_disturb <- ggwithinstats(
+  data = processed_data %>%
+    group_by(user_id, fake_news_generation_source) %>%
+    dplyr::summarize(mean_response_time = mean(Time_to_respond), .groups = "drop") %>%
+    dplyr::filter(mean_response_time <= quantile(.$mean_response_time, 0.9)),
+  x = fake_news_generation_source,
+  y = mean_response_time,
+  pairwise.comparisons = TRUE,
+  type = "p",
+  xlab = "",
+  ylab = "Average response time (in s) at subject-level",
+  results.subtitle = TRUE,
+  pairwise.display = "significant",
+  point.path = FALSE,
+  point.args = list(alpha = 0),
+  centrality.point.args = list(color = c("#000666", "#990000")),
+  centrality.label.args = list(size = 3.5, nudge_x = 0.4, segment.linetype = 4, min.segment.length = 0),
+  centrality.path = FALSE,
+  violin.args = list(width = 0.5, alpha = 0.2, na.rm = TRUE),
+  k = 3L,
+)
+
+time_disturb +
+  scale_fill_manual(values = c("#000666", "#990000")) +
+  scale_x_discrete(labels = c("Human-generated fake news", "AI-generated fake news")) +
+  geom_signif(
+    y_position = c(12), xmin = c(1), xmax = c(2),
+    annotation = SignifStar(time_disturb), tip_length = 0
+  )
+dev.off()
+```
+
+
+# Regressions:
+
+The detail sets of variable and the equation is avalibale at the body of the paper. 
+
+
+
+
+
+
+
+
+```{r, echo=FALSE}
+# Run Regression
+
+PerceivedVeracity_linear <- lmer(
+  PerceivedVeracity_z ~ fake_news_generation_source + VaccinationStatus +
+    NewsConsumption_z + Concern_z + CRT_score_z +
+    StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity + EthnicityBinary +
+    education_z + Age_z + GenderBinary + (1 | user_id),
+  data = processed_data %>% dplyr::filter(
+    PoliticalOrientation != 3,
+    GenderBinary != -1
+  )
+)
+# summary(PerceivedVeracity_linear)
+
+
+# vif(PerceivedVeracity_linear)
+
+
+PerceivedVeracity_linear_AI <- lmer(
+  PerceivedVeracity_z ~ VaccinationStatus +
+    NewsConsumption_z + Concern_z + CRT_score_z +
+    StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity + EthnicityBinary +
+    education_z + Age_z + GenderBinary + (1 | user_id),
+  data = processed_data %>%
+    dplyr::filter(
+      PoliticalOrientation != 3, GenderBinary != -1,
+      fake_news_generation_source == 1
+    )
+)
+
+# summary(PerceivedVeracity_linear_AI)
+
+PerceivedVeracity_linear_Hum <- lmer(
+  PerceivedVeracity_z ~ VaccinationStatus +
+    NewsConsumption_z + Concern_z + CRT_score_z +
+    StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity + EthnicityBinary +
+    education_z + Age_z + GenderBinary + (1 | user_id),
+  data = processed_data %>%
+    dplyr::filter(
+      PoliticalOrientation != 3, GenderBinary != -1,
+      fake_news_generation_source == 0
+    )
+)
+
+# summary(PerceivedVeracity_linear_Hum)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# pdf("Veracity_reg.pdf", width=11, height=7)
+
+dwplot(list(PerceivedVeracity_linear_Hum, PerceivedVeracity_linear_AI), effects = "fixed") %>%
+  relabel_predictors(
+    c(
+      vaccination1 = "VaccinationStatus",
+      Concern_z = "Concern",
+      NewsConsumption_z = "NewsConsumption",
+      CRT_score_z = "CRT",
+      Age_z = "Age",
+      gender_binary1 = "Gender",
+      PoliticalOrientation1 = "PoliticalOrientationly moderate - PoliticalOrientationly left",
+      PoliticalOrientation2 = "PoliticalOrientationly right - PoliticalOrientationly left",
+      EconomicOrientation1 = "Economic liberal - Economic strongly liberal",
+      EconomicOrientation2 = "Economic moderate - Economic strongly liberal",
+      EconomicOrientation3 = "Economic conservative - Economic strongly liberal",
+      EconomicOrientation4 = "Economic strongly conservative- Economic strongly liberal",
+      education_z = "EducationYears",
+      religious1 = "Not religous - Religous",
+      religious2 = "Atheist - Religous",
+      Income_z = "Income",
+      ethnicity_binary1 = "Ethnicity",
+      StatementSequence_z = "StatementSequence"
+    )
+  ) +
+  theme_bw() +
+  theme(legend.position = c(0.71, 0.88), legend.background = element_rect(fill = "transparent", colour = "transparent"), text = element_text(size = 14), axis.text = element_text(size = 6),legend.text=element_text(size=6)) +
+  geom_vline(
+    xintercept = 0,
+    colour = "grey60",
+    linetype = 2
+  ) +
+  xlab("Coefficient Estimate") +
+  scale_color_manual(
+    name = "",
+    labels = c("Human-generated fake news", "AI-generated fake news"),
+    values = c("Model 1" = "#000666", "Model 2" = "#990000")
+  )
+
+# dev.off()
+```
+
+
+
+
+
+
+```{r,echo=FALSE}
+share_linear_with_sequence_id <- lmer(
+  WillingnessToShare ~ fake_news_generation_source +
+    (1 | user_id) + StatementSequence_z,
+  data = processed_data %>%
+    dplyr::filter(WillingnessToShare_z != "NA")
+)
+
+# summary(share_linear_with_sequence_id)
+
+
+
+share_regression_linear <- lmer(
+  WillingnessToShare ~ fake_news_generation_source + VaccinationStatus + NewsConsumption_z +
+    CRT_score_z + Concern_z + StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity +
+    EthnicityBinary + education_z + Age_z + GenderBinary + (1 | user_id),
+  data = processed_data %>%
+    dplyr::filter(WillingnessToShare_z != "NA", PoliticalOrientation != 3, GenderBinary != -1)
+)
+
+# summary(share_regression_linear)
+
+# vif(share_regression_linear)
+
+
+share_regression_linear_human <- lmer(
+  WillingnessToShare ~ VaccinationStatus + NewsConsumption_z +
+    CRT_score_z + Concern_z + StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity +
+    EthnicityBinary + education_z + Age_z + GenderBinary + (1 | user_id),
+  data = processed_data %>%
+    dplyr::filter(
+      WillingnessToShare_z != "NA", fake_news_generation_source == 0,
+      PoliticalOrientation != 3, GenderBinary != -1
+    )
+)
+# summary(share_regression_linear_human)
+
+
+
+share_regression_linear_AI <- lmer(
+  WillingnessToShare ~ VaccinationStatus + NewsConsumption_z +
+    CRT_score_z + Concern_z + StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity +
+    EthnicityBinary + education_z + Age_z + GenderBinary + (1 | user_id),
+  data = processed_data %>%
+    dplyr::filter(
+      WillingnessToShare_z != "NA", fake_news_generation_source == 1,
+      PoliticalOrientation != 3, GenderBinary != -1
+    )
+)
+# summary(share_regression_linear_AI)
+```
+
+
+```{r}
+# pdf("Share_reg.pdf", width=11, height=7)
+
+dwplot(list(share_regression_linear_human, share_regression_linear_AI), effects = "fixed") %>%
+  relabel_predictors(
+    c(
+      vaccination1 = "VaccinationStatus",
+      Concern_z = "Concern",
+      NewsConsumption_z = "NewsConsumption",
+      CRT_score_z = "CRT",
+      Age_z = "Age",
+      gender_binary1 = "Gender",
+      PoliticalOrientation1 = "PoliticalOrientationly moderate - PoliticalOrientationly left",
+      PoliticalOrientation2 = "PoliticalOrientationly right - PoliticalOrientationly left",
+      EconomicOrientation1 = "Economic liberal - Economic strongly liberal",
+      EconomicOrientation2 = "Economic moderate - Economic strongly liberal",
+      EconomicOrientation3 = "Economic conservative - Economic strongly liberal",
+      EconomicOrientation4 = "Economic strongly conservative- Economic strongly liberal",
+      education_z = "EducationYears",
+      religious1 = "Not religous - Religous",
+      religious2 = "Atheist - Religous",
+      Income_z = "Income",
+      ethnicity_binary1 = "Ethnicity",
+      StatementSequence_z = "StatementSequence"
+    )
+  ) +
+
+  theme_bw() +
+  theme(legend.position = c(0.71, 0.63), legend.background = element_rect(fill = "transparent", colour = "transparent"), text = element_text(size = 14), axis.text = element_text(size = 6),legend.text=element_text(size=6)) +
+  geom_vline(
+    xintercept = 0,
+    colour = "grey60",
+    linetype = 2
+  ) +
+  xlab("Coefficient Estimate") +
+  scale_color_manual(
+    name = "",
+    labels = c("Human-generated fake news", "AI-generated fake news"),
+    values = c("Model 1" = "#000666", "Model 2" = "#990000")
+  )
+
+
+# dev.off()
+```
+# Robustness Check
+
+Check for the source of the human-generated fake news (Snopes vs Politifact):
+
+First figure for the percieved veracity and second figure for willingness to share.
+
+```{r,echo=FALSE}
+# summary(PerceivedVeracity_linear_Hum)
+
+PerceivedVeracity_linear_snopes <- lmer(
+  PerceivedVeracity_z ~ VaccinationStatus +
+    NewsConsumption_z + Concern_z + CRT_score_z +
+    StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity + EthnicityBinary +
+    education_z + Age_z + GenderBinary + (1 | user_id),
+  data = processed_data %>%
+    dplyr::filter(
+      PoliticalOrientation != 3, GenderBinary != -1,
+      statement_source == 0
+    )
+)
+
+# summary(PerceivedVeracity_linear_snopes)
+
+# vif(PerceivedVeracity_linear_snopes)
+
+PerceivedVeracity_linear_politifacts <- lmer(
+  PerceivedVeracity_z ~ VaccinationStatus +
+    NewsConsumption_z + Concern_z + CRT_score_z +
+    StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity + EthnicityBinary +
+    education_z + Age_z + GenderBinary + (1 | user_id),
+  data = processed_data %>%
+    dplyr::filter(
+      PoliticalOrientation != 3, GenderBinary != -1,
+      statement_source == 1
+    )
+)
+
+# summary(PerceivedVeracity_linear_politifacts)
+```
+```{r}
+dwplot(list(PerceivedVeracity_linear_Hum, PerceivedVeracity_linear_snopes, PerceivedVeracity_linear_politifacts), effects = "fixed") %>%
+  relabel_predictors(
+    c(
+      vaccination1 = "VaccinationStatus",
+      Concern_z = "Concern",
+      NewsConsumption_z = "NewsConsumption",
+      CRT_score_z = "CRT",
+      Age_z = "Age",
+      gender_binary1 = "Gender",
+      PoliticalOrientation1 = "PoliticalOrientationly moderate - PoliticalOrientationly left",
+      PoliticalOrientation2 = "PoliticalOrientationly right - PoliticalOrientationly left",
+      EconomicOrientation1 = "Economic liberal - Economic strongly liberal",
+      EconomicOrientation2 = "Economic moderate - Economic strongly liberal",
+      EconomicOrientation3 = "Economic conservative - Economic strongly liberal",
+      EconomicOrientation4 = "Economic strongly conservative- Economic strongly liberal",
+      education_z = "EducationYears",
+      religious1 = "Not religous - Religous",
+      religious2 = "Atheist - Religous",
+      Income_z = "Income",
+      ethnicity_binary1 = "Ethnicity",
+      StatementSequence_z = "StatementSequence"
+    )
+  ) +
+  theme_bw() +
+  theme(legend.position = c(0.71, 0.38), legend.background = element_rect(fill = "transparent", colour = "transparent"), text = element_text(size = 14), axis.text = element_text(size = 6),legend.text=element_text(size=6)) +
+  geom_vline(
+    xintercept = 0,
+    colour = "grey60",
+    linetype = 2
+  ) +
+  xlab("Coefficient Estimate") +
+  scale_color_manual(
+    name = "",
+    labels = c("Human-generated fake news", "Snopes fake news", "Politifacts dake news"),
+    values = c("Model 1" = "#000666", "Model 2" = "orange", "Model 3" = "green")
+  )
+```
+```{r,echo=FALSE}
+# summary(share_regression_linear_human)
+
+share_linear_snopes <- lmer(
+  WillingnessToShare ~ VaccinationStatus + NewsConsumption_z +
+    CRT_score_z + Concern_z + StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity +
+    EthnicityBinary + education_z + Age_z + GenderBinary + (1 | user_id),
+  data = processed_data %>%
+    dplyr::filter(
+      WillingnessToShare_z != "NA", statement_source == 0,
+      PoliticalOrientation != 3, GenderBinary != -1
+    )
+)
+
+# summary(PerceivedVeracity_linear_snopes)
+
+
+
+share_linear_politifacts <- lmer(
+  WillingnessToShare ~ VaccinationStatus + NewsConsumption_z +
+    CRT_score_z + Concern_z + StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity +
+    EthnicityBinary + education_z + Age_z + GenderBinary + (1 | user_id),
+  data = processed_data %>%
+    dplyr::filter(
+      WillingnessToShare_z != "NA", statement_source == 1,
+      PoliticalOrientation != 3, GenderBinary != -1
+    )
+)
+
+# summary(share_linear_politifacts)
+```
+
+```{r}
+dwplot(list(share_regression_linear_human, share_linear_snopes, share_linear_politifacts), effects = "fixed") %>%
+  relabel_predictors(
+    c(
+      vaccination1 = "VaccinationStatus",
+      Concern_z = "Concern",
+      NewsConsumption_z = "NewsConsumption",
+      CRT_score_z = "CRT",
+      Age_z = "Age",
+      gender_binary1 = "Gender",
+      PoliticalOrientation1 = "PoliticalOrientationly moderate - PoliticalOrientationly left",
+      PoliticalOrientation2 = "PoliticalOrientationly right - PoliticalOrientationly left",
+      EconomicOrientation1 = "Economic liberal - Economic strongly liberal",
+      EconomicOrientation2 = "Economic moderate - Economic strongly liberal",
+      EconomicOrientation3 = "Economic conservative - Economic strongly liberal",
+      EconomicOrientation4 = "Economic strongly conservative- Economic strongly liberal",
+      education_z = "EducationYears",
+      religious1 = "Not religous - Religous",
+      religious2 = "Atheist - Religous",
+      Income_z = "Income",
+      ethnicity_binary1 = "Ethnicity",
+      StatementSequence_z = "StatementSequence"
+    )
+  ) +
+  theme_bw() +
+  theme(legend.position = c(0.71, 0.38), legend.background = element_rect(fill = "transparent", colour = "transparent"), text = element_text(size = 14), axis.text = element_text(size = 6),legend.text=element_text(size=6)) +
+  geom_vline(
+    xintercept = 0,
+    colour = "grey60",
+    linetype = 2
+  ) +
+  xlab("Coefficient Estimate") +
+  scale_color_manual(
+    name = "",
+    labels = c("Human-generated fake news", "Snopes fake news", "Politifacts dake news"),
+    values = c("Model 1" = "#000666", "Model 2" = "orange", "Model 3" = "green")
+  )
+```
+
+Check the roubstness between using SocialOrientation and EcnomicOrientation: 
+```{r,echo=FALSE}
+# summary(PerceivedVeracity_linear)
+
+PerceivedVeracity_linear_SocialOrientation <- lmer(
+  PerceivedVeracity_z ~ fake_news_generation_source + VaccinationStatus +
+    NewsConsumption_z + Concern_z + CRT_score_z +
+    StatementSequence_z +
+    PoliticalOrientation + SocialOrientation + Income_z + Religiosity + EthnicityBinary +
+    education_z + Age_z + GenderBinary + (1 | user_id),
+  data = processed_data %>% dplyr::filter(
+    PoliticalOrientation != 3,
+    GenderBinary != -1
+  )
+)
+# summary(PerceivedVeracity_linear_SocialOrientation)
+```
+
+
+
+```{r}
+dwplot(list(PerceivedVeracity_linear, PerceivedVeracity_linear_SocialOrientation), effects = "fixed") %>%
+  relabel_predictors(
+    c(
+      vaccination1 = "VaccinationStatus",
+      Concern_z = "Concern",
+      NewsConsumption_z = "NewsConsumption",
+      CRT_score_z = "CRT",
+      Age_z = "Age",
+      gender_binary1 = "Gender",
+      PoliticalOrientation1 = "PoliticalOrientationly moderate - PoliticalOrientationly left",
+      PoliticalOrientation2 = "PoliticalOrientationly right - PoliticalOrientationly left",
+      EconomicOrientation1 = "Economic liberal - Economic strongly liberal",
+      EconomicOrientation2 = "Economic moderate - Economic strongly liberal",
+      EconomicOrientation3 = "Economic conservative - Economic strongly liberal",
+      EconomicOrientation4 = "Economic strongly conservative- Economic strongly liberal",
+      education_z = "EducationYears",
+      religious1 = "Not religous - Religous",
+      religious2 = "Atheist - Religous",
+      Income_z = "Income",
+      ethnicity_binary1 = "Ethnicity",
+      StatementSequence_z = "StatementSequence"
+    )
+  ) +
+  theme_bw() +
+  theme(legend.position = c(0.71, 0.38), legend.background = element_rect(fill = "transparent", colour = "transparent"), text = element_text(size = 14), axis.text = element_text(size = 6),legend.text=element_text(size=6)) +
+  geom_vline(
+    xintercept = 0,
+    colour = "grey60",
+    linetype = 2
+  ) +
+  xlab("Coefficient Estimate") +
+  scale_color_manual(
+    name = "",
+    labels = c("Percieved veracity mixed-effect linear with EconomicOrientation", "Percieved veracity mixed-effect linear with SocialOrientation"),
+    values = c("Model 1" = "orange", "Model 2" = "green")
+  )
+```
+```{r,echo=FALSE}
+# summary(PerceivedVeracity_linear)
+
+PerceivedVeracity_linear_plus_respond_time <- lmer(
+  PerceivedVeracity_z ~ fake_news_generation_source + VaccinationStatus +
+    NewsConsumption_z + Concern_z + CRT_score_z +
+    StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity + EthnicityBinary +
+    education_z + Age_z + GenderBinary + Time_to_respond_z +
+    (1 | user_id),
+  data = processed_data %>% dplyr::filter(
+    PoliticalOrientation != 3,
+    GenderBinary != -1
+  )
+)
+# summary(PerceivedVeracity_linear_plus_respond_time)
+```
+```{r}
+dwplot(list(PerceivedVeracity_linear, PerceivedVeracity_linear_plus_respond_time), effects = "fixed") %>%
+  relabel_predictors(
+    c(
+      vaccination1 = "VaccinationStatus",
+      Concern_z = "Concern",
+      NewsConsumption_z = "NewsConsumption",
+      CRT_score_z = "CRT",
+      Age_z = "Age",
+      gender_binary1 = "Gender",
+      PoliticalOrientation1 = "PoliticalOrientationly moderate - PoliticalOrientationly left",
+      PoliticalOrientation2 = "PoliticalOrientationly right - PoliticalOrientationly left",
+      EconomicOrientation1 = "Economic liberal - Economic strongly liberal",
+      EconomicOrientation2 = "Economic moderate - Economic strongly liberal",
+      EconomicOrientation3 = "Economic conservative - Economic strongly liberal",
+      EconomicOrientation4 = "Economic strongly conservative- Economic strongly liberal",
+      education_z = "EducationYears",
+      religious1 = "Not religous - Religous",
+      religious2 = "Atheist - Religous",
+      Income_z = "Income",
+      ethnicity_binary1 = "Ethnicity",
+      StatementSequence_z = "StatementSequence",
+      Time_to_respond_z = "Time to respond"
+    )
+  ) +
+  theme_bw() +
+  theme(legend.position = c(0.71, 0.38), legend.background = element_rect(fill = "transparent", colour = "transparent"), text = element_text(size = 14), axis.text = element_text(size = 6),legend.text=element_text(size=5)) +
+  geom_vline(
+    xintercept = 0,
+    colour = "grey60",
+    linetype = 2
+  ) +
+  xlab("Coefficient Estimate") +
+  scale_color_manual(
+    name = "",
+    labels = c("Percieved veracity mixed-effect linear", "Percieved veracity mixed-effect linear plus Time_to_respond"),
+    values = c("Model 1" = "orange", "Model 2" = "green")
+  )
+```
+
+Check between using robust standard error and mixed-effect regression: 
+```{r,echo=FALSE}
+PerceivedVeracity_linear_roubst <- lm(
+  PerceivedVeracity_z ~ fake_news_generation_source + VaccinationStatus +
+    NewsConsumption_z + Concern_z + CRT_score_z +
+    StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity + EthnicityBinary +
+    education_z + Age_z + GenderBinary,
+  data = processed_data %>% dplyr::filter(
+    PoliticalOrientation != 3,
+    GenderBinary != -1
+  )
+)
+# summary(PerceivedVeracity_linear_roubst)
+
+PerceivedVeracity_linear_roubst_clustered <- coeftest(PerceivedVeracity_linear_roubst,
+  vcov = vcovCL,
+  type = "HC1",
+  cluster = ~user_id
+)
+```
+
+
+```{r}
+dwplot(list(PerceivedVeracity_linear, PerceivedVeracity_linear_roubst_clustered), effects = "fixed") %>%
+  relabel_predictors(
+    c(
+      vaccination1 = "VaccinationStatus",
+      Concern_z = "Concern",
+      NewsConsumption_z = "NewsConsumption",
+      CRT_score_z = "CRT",
+      Age_z = "Age",
+      gender_binary1 = "Gender",
+      PoliticalOrientation1 = "PoliticalOrientationly moderate - PoliticalOrientationly left",
+      PoliticalOrientation2 = "PoliticalOrientationly right - PoliticalOrientationly left",
+      EconomicOrientation1 = "Economic liberal - Economic strongly liberal",
+      EconomicOrientation2 = "Economic moderate - Economic strongly liberal",
+      EconomicOrientation3 = "Economic conservative - Economic strongly liberal",
+      EconomicOrientation4 = "Economic strongly conservative- Economic strongly liberal",
+      education_z = "EducationYears",
+      religious1 = "Not religous - Religous",
+      religious2 = "Atheist - Religous",
+      Income_z = "Income",
+      ethnicity_binary1 = "Ethnicity",
+      StatementSequence_z = "StatementSequence",
+      Time_to_respond_z = "Time to respond"
+    )
+  ) +
+  theme_bw() +
+  theme(legend.position = c(0.71, 0.88), legend.background = element_rect(fill = "transparent", colour = "transparent"), text = element_text(size = 14), axis.text = element_text(size = 6),legend.text=element_text(size=8)) +
+  geom_vline(
+    xintercept = 0,
+    colour = "grey60",
+    linetype = 2
+  ) +
+  xlab("Coefficient Estimate") +
+  scale_color_manual(
+    name = "",
+    labels = c("Percieved veracity mixed-effect linear", "Percieved. veracity roubst error"),
+    values = c("Model 1" = "orange", "Model 2" = "green")
+  )
+```
+
+Check the Ordinal regression for percieved veracity: 
+
+```{r, echo = FALSE}
+PerceivedVeracity_ordinal <- clmm(
+  PerceivedVeracity ~ fake_news_generation_source + VaccinationStatus +
+    NewsConsumption_z + Concern_z + CRT_score_z +
+    StatementSequence_z +
+    PoliticalOrientation + Income_z + Religiosity + EthnicityBinary +
+    education_z + Age_z + (1 | user_id),
+  data = processed_data %>% dplyr::filter(PoliticalOrientation != 3) %>%
+    mutate(PerceivedVeracity = as.factor(PerceivedVeracity))
+)
+summary(PerceivedVeracity_ordinal)
+```
+
+```{r,echo=FALSE}
+PerceivedVeracity_linear_AI_ordinal <- clmm(
+  PerceivedVeracity ~ VaccinationStatus +
+    PoliticalOrientation + NewsConsumption + CRT_score_z +
+    StatementSequence_z + Income + Religiosity +
+    EthnicityBinary + education_z + (1 | user_id),
+  data = processed_data %>% mutate(PerceivedVeracity = as.factor(PerceivedVeracity)) %>% dplyr::filter(PoliticalOrientation != 3, fake_news_generation_source == 1)
+)
+
+# summary(PerceivedVeracity_linear_AI_ordinal)
+```
+
+```{r,echo=FALSE}
+ PerceivedVeracity_linear_Hum_ordinal <- clmm(
+                                 PerceivedVeracity ~ VaccinationStatus +
+                                 PoliticalOrientation + NewsConsumption + CRT_score_z +
+                                 StatementSequence_z + Income + Religiosity +
+                                EthnicityBinary + education_z + (1 | user_id),
+                                 data = processed_data %>% mutate(PerceivedVeracity = as.factor(PerceivedVeracity)) %>% dplyr::filter(PoliticalOrientation != 3, fake_news_generation_source == 0)
+                                  )
+
+# summary(PerceivedVeracity_linear_Hum_ordinal)
+```
+
+Check the logistic regression for Willingness to share:
+
+```{r,echo=FALSE}
+shareRegresssion <- glmer(
+  WillingnessToShare_fac ~ fake_news_generation_source +
+    VaccinationStatus + NewsConsumption_z +
+    CRT_score_z + Concern_z + StatementSequence_z +
+    PoliticalOrientation + EconomicOrientation + Income_z + Religiosity +
+    EthnicityBinary + education_z + Age_z + GenderBinary + (1 | user_id),
+  family = binomial(link = "logit"),
+  data = processed_data %>%
+    dplyr::filter(
+      WillingnessToShare_z != "NA",
+      PoliticalOrientation != 3, GenderBinary != -1
+    ), nAGQ = 0
+)
+
+# summary(shareRegresssion)
+```
