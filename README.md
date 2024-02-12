@@ -1,10 +1,14 @@
-# CSCW24_review
+# Comparing the willingness to share for human-generated vs. AI-generated fake news
+
+- Data:
+ - raw_data.csv: the raw data exported from the survey
+ - processed_data.csv: processed data, which is an output of data_preprocessing.ipynb. This csv is input of Analysis.Rmd
 
 - Code:
   - data_preprocessing.ipynb : Jupyter notebook contains pre-processing of the data.
-  - Analysis_CSCW24.Rmd : R markdown file containing analysis.
+  - Analysis.Rmd : R markdown file containing analysis.
   - ggwithinstats.R: Modification of ggwithstats function from ggstatsplot for filling the violin charts
 
 - Supplementary:
-  - CSCW_24_supplementary Matrial.pdf: contains all fake news items
+  - supplementary Matrial.pdf: contains all fake news items
 
